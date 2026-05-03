@@ -23,6 +23,15 @@ package i2c_test_pkg;
   `include "tests/i2c_slave_read_test.sv"
   `include "tests/i2c_master_fsm_test.sv"
 
+  // Credit-Based Test Library
+  `include "tests/i2c_credit_test_base.sv"
+  `include "tests/i2c_credit_sanity_test.sv"
+  `include "tests/i2c_credit_exhaustion_test.sv"
+  `include "tests/i2c_credit_burst_test.sv"
+  `include "tests/i2c_credit_error_test.sv"
+  `include "tests/i2c_credit_dual_role_test.sv"
+  `include "tests/i2c_credit_random_test.sv"
+
 endpackage
 
 `endif // I2C_TEST_PKG_SV

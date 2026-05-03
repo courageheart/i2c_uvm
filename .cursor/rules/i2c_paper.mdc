@@ -1,0 +1,288 @@
+---
+description: I2C-specific supplement to latex_writer.mdc. Scoped to paper/**/*.tex. Encodes symbol registry across sibling papers, terminology lock-in, canonical UVM naming, protocol-specific hedges, curated reference bank with IEEE-first preference ladder, matplotlib and seaborn legend discipline, LaTeX float-placement rules including the ieeeaccess.cls post-\maketitle \raggedbottom requirement and the mandatory minipage wrap for every lstlisting, baseline-comparison discipline (analytical illustrations are explicitly labelled as such; measured comparisons require both columns to be measured from committed scripts), code-and-data availability discipline (every submission carries a Code and Data Availability subsection citing the public repository URL with a paper-to-repo artifact map), folder-naming convention, ten-item anti-plagiarism pre-commit checklist, and a future-topics parking lot for new I2C manuscripts.
+globs: paper/**/*.tex
+alwaysApply: false
+---
+
+# Purpose
+
+This rule supplements `latex_writer.mdc` with provisions that are specific to the I\textsuperscript{2}C family of verification papers in this workspace.
+`latex_writer.mdc` governs scientific writing, anti-plagiarism, scope discipline, forbidden-phrase sweeps, and reference freshness.
+This file governs the additional discipline needed so that multiple I\textsuperscript{2}C manuscripts authored from the same codebase do not collide on symbols, terminology, UVM names, or reference surface, and do not drift away from the house convention on folder structure.
+
+When this rule conflicts with `latex_writer.mdc`, `latex_writer.mdc` wins.
+When this rule is silent, defer to `latex_writer.mdc`.
+
+# Symbol registry across I2C sibling papers
+
+Every I\textsuperscript{2}C sibling paper in this workspace consults this registry before binding a symbol at a display equation.
+Symbols that are already bound in a sibling manuscript must not be re-bound to a different meaning, even for a different physical quantity.
+Reusing a letter is permitted only if it is given a distinguishing subscript, superscript, or accent, AND the equation is accompanied by a one-sentence disambiguation clause that names the sibling and the sibling's original binding.
+
+| Symbol | Paper of origin | Meaning | Notes |
+|---|---|---|---|
+| `B(t)` | `deterministic_dual_role_i2c_verification/access.tex` | Bus state at time `t` (idle, start, data, stop) | Do not reuse in other siblings for buffer state |
+| `D^{(i)}` | `deterministic_dual_role_i2c_verification/access.tex` | Per-agent drive-enable for agent `i` | Distinct from credit paper's `D` (receiver capacity) |
+| `d^{(i)}` | `deterministic_dual_role_i2c_verification/access.tex` | Per-agent drive-decision signal for agent `i` | Lowercase variant, distinct from `D^{(i)}` |
+| `Role(t)` | `deterministic_dual_role_i2c_verification/access.tex` | Agent role at time `t` (master or slave) | Dual-role scope only |
+| `c(t)` | `credit_based_flow_control_verification/access.tex` | Transmitter's live credit counter at time `t` | Scalar, non-negative integer |
+| `D` | `credit_based_flow_control_verification/access.tex` | Receiver FIFO capacity (`cbr_depth`) | Bound to depth config knob |
+| `f(t)` | `credit_based_flow_control_verification/access.tex` | Credits in flight (consumed but not yet returned) | Conservation: `c(t) + f(t) = D` |
+| `cbr_pipe_delay` | `credit_based_flow_control_verification/access.tex` | Return-path pipeline depth in cycles | Config knob, integer |
+| `T_stall` | `credit_based_flow_control_verification/access.tex` | CBT stall timeout derived from depth and pipe delay | `cbr_depth * cbr_pipe_delay * t_LOW` |
+
+A paper that introduces a new I\textsuperscript{2}C symbol appends a row here and commits the row together with the manuscript.
+A paper that reuses a registry symbol with a subscript adds a disambiguation sentence at the defining equation in the form:
+"We adopt `<symbol>` for `<meaning>`; the `<sibling paper slug>` manuscript's `<conflicting symbol>` denoting `<sibling meaning>` is unrelated and not reused here."
+
+# Terminology lock-in
+
+- The protocol name in prose is `I\textsuperscript{2}C`. The forms `I2C`, `IIC`, `i2c`, and `I^2C` must not appear in prose or in captions. Identifiers inside code listings (file names, class names, ports) that contain the ASCII spelling `i2c` are exempt because the tools treat them as source text rather than prose.
+- Bus signals in prose are `\texttt{scl}` and `\texttt{sda}`; open-drain contributions are `\texttt{scl\_drive}` and `\texttt{sda\_drive}`. The capitalized forms `SCL` and `SDA` are used only in figure legends, in the I\textsuperscript{2}C specification citation, or when contrasting electrical behavior.
+- I\textsuperscript{2}C specification timing parameters are written with the mathrm form and tied to their units with a non-breaking space: `$t_{\mathrm{BUF}}$`, `$t_{\mathrm{LOW}}$`, `$t_{\mathrm{HIGH}}$`, `$t_{\mathrm{SU;STA}}$`, `$t_{\mathrm{HD;DAT}}$`, `$t_{\mathrm{VD;DAT}}$`.
+- The bus frequency is written `$100$~kHz` (Standard Mode), `$400$~kHz` (Fast Mode), `$1$~MHz` (Fast Mode Plus), `$3.4$~MHz` (High-Speed Mode), `$5$~MHz` (Ultra Fast-Mode); always with a non-breaking space between numeral and unit, and the mode name is stated on first mention.
+- Reference to the I\textsuperscript{2}C specification uses the NXP UM10204 citation (`b1` in the shared reference bank) and the phrase "I\textsuperscript{2}C-Bus Specification and User Manual" verbatim; paraphrased titles such as "I\textsuperscript{2}C standard" or "I\textsuperscript{2}C protocol manual" are avoided in references.
+- Enumerate and itemize items do not apply `\textbf{...}` to the leading label. A trailing colon is sufficient to distinguish label from body, and when the label itself is a full clause a trailing period is preferred. Bold inside item labels creates visual noise, doubles the cognitive weight of the list, and is rejected by review; the `\item \textbf{Label:} body` pattern is mechanically rewritten to `\item Label: body` before commit.
+
+# Canonical UVM naming across siblings
+
+The shared testbench is the canonical source. Paper manuscripts that reference the codebase must use the exact names below.
+
+- Environment: `i2c_env`
+- Agent: `i2c_agent`
+- Driver: `i2c_driver` (base), specializations `i2c_master_driver`, `i2c_slave_driver`, `i2c_credit_master_driver`, `i2c_credit_slave_driver`
+- Monitor: `i2c_monitor` (base), specialization `i2c_credit_monitor`
+- Sequencer: `i2c_sequencer`
+- Scoreboard: `i2c_scoreboard`
+- Coverage collector: `i2c_coverage`
+- Event pool: `i2c_event_pool`
+- Config object: `i2c_config`
+- Sequence item: `i2c_seq_item`
+
+Paper-specific configuration knobs use the paper's slug as a prefix to avoid collision in the shared config object: `cfg.cbr_depth`, `cfg.cbr_pipe_delay`, `cfg.credit_mode_enable`, `cfg.dual_role_switch_gate`, `cfg.bus_ownership_invariant_enable`.
+A new I\textsuperscript{2}C paper that introduces a new config knob adds the knob to the shared `i2c_config` and documents it in this rule file.
+
+# Protocol-specific hedges
+
+Replace free-standing adjectives such as "deterministic", "regression-friendly", "scalable", or "robust" with bounded-scope hedges that state the envelope in the same clause.
+Preferred I\textsuperscript{2}C-specific forms:
+
+- "at the operating point of I\textsuperscript{2}C Standard Mode (`$100$~kHz`) with `$t_{\mathrm{BIT}} = 10~\mu\mathrm{s}$`"
+- "within the tested `$t_{\mathrm{BUF}}$` envelope of N to M cycles"
+- "on the co-simulated RTL slave with an 8-entry FIFO and `cbr_pipe_delay` of 1--4 cycles"
+- "under the evaluated burst-length sweep of `$B \in \{1, 4, 8, 16, 32\}$`"
+- "deterministic within the tested `cbr_pipe_delay` envelope; behavior outside the tested envelope is a subject of Section III's limitations"
+- "regression-friendly in the sense that same-seed reruns reproduce the shadow-counter trace bit-for-bit across the 90-run campaign"
+
+Unbounded adjectives are rejected by review.
+
+# Reference bank for I2C sibling papers
+
+The following citations are the curated reference surface for I\textsuperscript{2}C papers in this workspace.
+New manuscripts should prefer these to keep the shared reference surface consistent across siblings, and must respect the pre-2024 ceiling defined in `latex_writer.mdc` (at most three pre-2024 entries per manuscript).
+
+Pre-2024 anchor references (use sparingly; do not exceed three per paper):
+- NXP UM10204: NXP Semiconductors. I\textsuperscript{2}C-Bus Specification and User Manual; **2014**. (essential I\textsuperscript{2}C specification anchor)
+- PCI-SIG: PCI Express Base Specification Revision 6.0; **2022**. (credit-based flow-control reference in sibling protocols)
+- USB-IF: Universal Serial Bus Specification Revision 2.0; **2000**. (endpoint-level flow-control reference)
+
+Post-2024 preferred references:
+- Sahay & Gajjar (ICOSEC **2024**): UART/SPI/I\textsuperscript{2}C UVM verification.
+- Shrinivasan et al. (GCAT **2024**): I\textsuperscript{2}C UVM environment.
+- Liao et al. (Electronics **2025**): SPI protocol UVM verification for IoT.
+- Penta & Islam (arXiv **2025**): synchronous FIFO design and verification.
+- Meng et al. (GetMobile **2025**): IoT architecture for large-scale deployment.
+- Ma et al. (IEEE TCAD **2025**): NoCFuzzer NoC verification in UVM.
+- Moon et al. (Electronics **2025**): assertion-based I\textsuperscript{2}C SystemVerilog verification.
+- Berik & Baykal (Microprocessors and Microsystems **2026**): formal verification of I\textsuperscript{2}C for aerospace.
+- Huang & Yang (Journal of Supercomputing **2024**): I\textsuperscript{2}C bus interface circuit design and VLSI.
+- Lu et al. (Electronics **2025**): SystemVerilog I\textsuperscript{2}C VIP with assertions and error injection.
+- Kurapati (Journal of Computational Analysis & Applications **2025**): I\textsuperscript{2}C vs I\textsuperscript{3}C comparative overview.
+- Kunta et al. (International Research Journal on Advanced Science Hub **2025**): I\textsuperscript{2}C Verilog implementation.
+- Huang et al. (IEEE Access **2026**, accepted): dual-role I\textsuperscript{2}C verification with bus-ownership invariants.
+- L\"{a}ufer (UC Berkeley **2024**): automated RTL verification and repair.
+
+Suggested routing rules when a paper needs to cite a pre-2024 concept:
+- NoC credit-based virtual channels: route through Ma et al. 2025 (NoCFuzzer) rather than through Dally 2001 or Bjerregaard 2006.
+- I\textsuperscript{2}C clock-stretching semantics: route through Berik 2026 or Lu 2025 rather than through Salunkhe 2017.
+- UVM LRM reference: if a concrete section of the LRM is not cited, omit the entry rather than carrying it as a pre-2024 line item; cite a concrete assertion or class when the LRM is named.
+- SystemVerilog reference: similarly, cite a concrete language feature in use; omit the 2005 IEEE 1800 entry if the feature is not explicitly named.
+
+## IEEE-first preference ladder
+
+When choosing a reference for a new technical claim, walk this ladder top-down and pick the first venue that carries the claim. Picking lower on the ladder when a higher-ladder option exists is rejected by review.
+
+1. IEEE journal (Access, TCAD, TVLSI, TCAS-I, TCAS-II, TDSC, Micro, Computer, Design & Test).
+2. IEEE-sponsored conference (DAC, DATE, ICCAD, ISCAS, VTS, ITC, ISVLSI, HOST, AsianHOST, ATS, NorCAS, IOLTS).
+3. ACM journal or conference (TODAES, TACO, HPCA, MICRO, ISCA).
+4. Springer / Elsevier / MDPI peer-reviewed journal (Electronics, Microprocessors and Microsystems, Journal of Supercomputing, Systems).
+5. arXiv preprint, or camera-ready pre-publication at a top venue accepted but not yet indexed.
+
+Hard floor for IEEE Access submissions authored from this workspace: at least twenty cited references, of which at least one-third (ceiling of `total / 3`) sit at ladder level 1 or 2. When this floor is not met, the manuscript returns to the research stage rather than padding with lower-ladder citations. A soft target of "at least half at ladder level 1 or 2" applies as a quality indicator for subsequent revisions, but is not a review-blocker on the initial submission.
+
+## Bibliography keys already used in this workspace
+
+New I\textsuperscript{2}C manuscripts should reuse the following keys rather than re-researching equivalent references from scratch. Each entry shows the current manuscript that cites it, the short descriptor, and the venue ladder level; a new manuscript that needs the same claim adopts the key unless the topical fit is demonstrably weaker.
+
+| Key | Descriptor | Year | Venue | Ladder |
+|---|---|---|---|---|
+| `b1` | NXP UM10204 I\textsuperscript{2}C specification | 2014 | NXP standards document | anchor |
+| `b2` | Sahay & Gajjar, UART/SPI/I\textsuperscript{2}C UVM | 2024 | IEEE ICOSEC | 2 |
+| `b3` | Shrinivasan et al., I\textsuperscript{2}C UVM | 2024 | IEEE GCAT | 2 |
+| `b4` | Abbas et al., AXI4 VIP in UVM | 2025 | IEEE NorCAS | 2 |
+| `b5` | Liao et al., SPI UVM for IoT | 2025 | Electronics (MDPI) | 4 |
+| `b6` | PCI-SIG PCI Express Base Spec 6.0 | 2022 | PCI-SIG | anchor |
+| `b7` | USB-IF USB 2.0 specification | 2000 | USB-IF | anchor |
+| `b8` | Paul et al., LISA LLM SVA gen | 2025 | IEEE ISVLSI | 2 |
+| `b9` | Penta & Islam, synchronous FIFO | 2025 | arXiv | 5 |
+| `b10` | Meng et al., IoT deployment architecture | 2025 | GetMobile | 4 |
+| `b11` | Ma et al., NoCFuzzer UVM NoC | 2025 | IEEE TCAD | 1 |
+| `b12` | Moon et al., I\textsuperscript{2}C SVA | 2025 | Electronics (MDPI) | 4 |
+| `b13` | Lyu et al., AssertGen LLM assertions | 2025 | IEEE ATS | 2 |
+| `b14` | Farooq et al., C+UVM RISC-V secure SoC | 2025 | IEEE AsianHOST | 2 |
+| `b15` | Waddoups et al., probabilistic NoC verification | 2026 | VMCAI | 3 |
+| `b16` | Qiu & Liu, UVM-TLM RISC-V co-sim | 2025 | arXiv | 5 |
+| `b17` | Berik & Baykal, formal I\textsuperscript{2}C for aerospace | 2026 | Microprocessors and Microsystems | 4 |
+| `b18` | Radu et al., generative AI UVM SVA | 2024 | Systems (MDPI) | 4 |
+| `b19` | Tarek et al., BugWhisperer LLM SoC vulns | 2025 | IEEE VTS | 2 |
+| `b20` | Huang & Yang, mini I\textsuperscript{2}C VLSI | 2024 | Journal of Supercomputing | 4 |
+| `b21` | Ji & Yang, deadlock-free NoC routing | 2025 | Electronics (MDPI) | 4 |
+| `b22` | Lu et al., I\textsuperscript{2}C VIP SVA + error injection | 2025 | Electronics (MDPI) | 4 |
+| `b23` | Kurapati, I\textsuperscript{2}C vs I\textsuperscript{3}C overview | 2025 | JoCAA | 4 |
+| `b24` | Kunta et al., I\textsuperscript{2}C Verilog implementation | 2025 | IRJASH | 4 |
+| `b28` | Huang et al., dual-role I\textsuperscript{2}C BOIs | 2026 | IEEE Access | 1 |
+| `b30` | L\"{a}ufer, automated RTL verification | 2024 | UC Berkeley thesis | 3 |
+
+When a new manuscript consumes a key, it does not need to re-append its row; when a new manuscript retires a key (because a more topical reference supersedes it), strike the retired row with `(retired)` rather than deleting it, so that future archaeology on the reference surface is possible.
+
+## Matplotlib and seaborn legend discipline
+
+Diagrams produced from `img/seaborn/*.py` ship both `.png` (for on-screen review) and `.pdf` (for LaTeX inclusion) via two explicit `plt.savefig` calls with `bbox_inches='tight'`. A diagram that ships only the PNG is rejected by review because the LaTeX build otherwise rasterizes its input.
+
+Auxiliary legends (line-type keys, swatch keys, numbered-annotation boxes) must not overlap each other, any data region, or any annotation text. Concretely:
+
+- Prefer a single-row legend placed along the top or bottom margin of the axes, with at most five horizontal columns. A two-row legend is acceptable only when the first row is line-type keys and the second row is a numbered annotation box placed strictly below the first row with a minimum vertical gap of `0.15` axis units.
+- When mixing a swatch legend with a numbered annotation box, either (a) place the swatch in the same top row as the line-type keys to keep the numbered box isolated, or (b) increase the vertical gap between rows until a visual inspection confirms non-overlap; inspection is part of the pre-commit checklist, not a runtime assertion.
+- Module-scope constants for legend geometry (`leg_x`, `leg_y_top`, `leg_y_bot`, `leg_box_x`, `leg_box_y`, `leg_box_w`, `leg_box_h`) are declared at the top of the plotting function so that future edits do not require tracing through axis-relative offsets.
+- The absolute position of each legend element is computed relative to the module-scope constants rather than to hardcoded literals inside the drawing loop. Hardcoded literals for legend coordinates are rejected because they break overlap review when the figure is resized.
+- Caption-line count for diagrams citing numbered callouts (`\ding{172}` through `\ding{181}`) is kept at nine or fewer; a callout count above nine breaks the visual mapping between diagram and caption and is instead split across two subpanels.
+
+Cross-check: every architecture diagram regenerated during a revision pass produces both a PNG and a PDF, and the PNG is opened for visual inspection of legend overlap before the corresponding `.tex` build is requested.
+
+## LaTeX float-placement rules
+
+Float specifiers carry verification-adjacent meaning because aggressive `[!t]` placement in a two-column template collides with `lstlisting` density and produces the whitespace artifacts that a careful reader reads as "the authors did not run the manuscript".
+
+- Single-column figures default to `[!htbp]`, not `[!t]`. A global `\floatplacement{figure}{htbp}` is declared in the preamble together with `\usepackage{float}` so that a forgotten specifier still routes through the default.
+- Column-spanning `figure*` uses `[!t]` only, and only when `stfloats` is loaded in the preamble; `[!b]` on a column-spanning float is rejected because the IEEE Access template does not reserve a matching bottom-of-column slot.
+- Text-float separation is tightened in the preamble with `\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}`, `\setlength{\intextsep}{6pt plus 2pt minus 2pt}`, and `\setlength{\dbltextfloatsep}{8pt plus 2pt minus 2pt}`. These values are preserved across revision rounds unless the page count explicitly requires looser spacing.
+- Listing-density threshold: if a section contains three or more `lstlisting` blocks, it must not also contain more than two `[!t]` figure floats. If the combined budget is exceeded, the single-column figures are demoted to `[!htbp]` and `\floatplacement{figure}{htbp}` is re-declared locally with `\begingroup...\endgroup` around the dense subsection.
+- Per-listing length is capped at 25 source lines. Longer listings are split, with the caption clarifying the split (e.g., "Listing 4a / 4b: credit monitor, TBI-1 enforcement / TBI-6 enforcement") so that LaTeX does not orphan the caption from its code block.
+- Every `\begin{figure}[!t]` (not `figure*`) introduced during a revision pass is verified by grep against the manuscript before commit; a non-zero hit count converts to `[!htbp]` or promotes the figure to `figure*` depending on whether the content is single- or column-spanning.
+- Column-spanning `figure*[!t]` is preferred whenever column-width rendering would make tick labels, annotation text, or legend entries illegible at the final page scale. Architecture block diagrams, wide comparison tables, time-series traces whose horizontal axis has more than ten major ticks, raincloud plots with multiple category columns, and regression bar charts with five or more scenarios therefore default to `figure*[!t]` with `width=0.85\linewidth` to `0.88\linewidth`. Narrow single-shot plots (initialization waterfalls, single-panel histograms) stay at `figure[!htbp]` with `width=0.92\linewidth` to `0.98\linewidth` so they render close to the referencing paragraph. The round-3 whitespace artifact that motivated a single-column default no longer applies because `\raggedbottom` (re-issued after `\maketitle`) and the mandatory minipage wrap for every `lstlisting` remove the vertical-glue stretch and the listing-split mechanisms that produced the gap; readability is the governing criterion.
+- Manuscripts containing five or more `lstlisting` blocks add `\raggedbottom`, `\widowpenalty=10000`, and `\clubpenalty=10000` to the preamble directly after the `\dbltextfloatsep` line, to prevent `\flushbottom` from stretching vertical glue around deferred floats and to suppress orphan/club lines around listings.
+- The IEEE Access class (`ieeeaccess.cls`) re-issues `\flushbottom` inside its `\maketitle` expansion, so the preamble `\raggedbottom` alone is insufficient. Every manuscript using `ieeeaccess.cls` repeats the three lines (`\raggedbottom`, `\widowpenalty=10000`, `\clubpenalty=10000`) immediately after `\maketitle` so the ragged-bottom policy survives class initialization. A missing post-`\maketitle` `\raggedbottom` is the single most common cause of persistent whitespace around listings after a round-1 fix has already tightened float separations.
+- Every `lstlisting` block is wrapped in `\noindent\begin{minipage}{\linewidth} ... \end{minipage}` so that the code body and its caption are atomic and cannot split across column boundaries. Column splits are the second most common cause of whitespace around listings: when an unwrapped `lstlisting` is cut between columns, `captionpos=b` attaches the caption to the fragment carrying the last code line, leaving the other column with stretched glue above the fragment. The minipage wrap eliminates the split entirely; the listing either fits in the remaining column or starts the next column as a single unit. An unwrapped `\begin{lstlisting}` in a manuscript with five or more listings is rejected by review.
+- Global caption separation lengths `\abovecaptionskip` and `\belowcaptionskip` are pinned to `4pt` and `2pt` respectively in the preamble, so that the listings package's local `abovecaptionskip=0.5em` is not shadowed by an IEEE Access default that reinstalls a stretchier `10pt plus 2pt minus 2pt` value during class loading.
+
+# Baseline-comparison discipline
+
+Every I\textsuperscript{2}C verification manuscript carries an explicit quantitative trade-off discussion against an alternative that the proposed mechanism replaces or augments. The discussion takes one of two forms, and the form is named honestly in the figure title and prose:
+
+- **Measured comparison.** Both columns of the comparison are measured under the same testbench harness, the same workload, and the same simulator build. The generator script is committed under `img/seaborn/` and the regression CSVs that back each measured column are committed under `sim/` (or wherever the regression target writes them). A measured comparison is the default form whenever both modes can be exercised in the existing testbench by toggling a config knob (e.g. `cfg.<feature>_enable`).
+- **Analytical illustration.** When one or both columns cannot be measured at the current revision pass (e.g. the alternative requires a separate testbench, or the comparison quantity is a closed-form bound rather than a regression metric), the figure is presented as a single-curve analytical illustration rather than a two-column comparison. The figure title contains the word "Analytical" verbatim, the y-axis names what the curve represents (e.g. "overhead", not "efficiency", to avoid suggesting a measurement substitution), and the prose states the closed-form expression so a reviewer can re-derive the curve without opening the repository. The generator script is committed under `img/seaborn/` with the naming pattern `generate_<topic>_overhead.py` or `generate_<topic>_bound.py`.
+
+A "two-column comparison" in which both columns are modeled (no measurement is substituted in either column) is rejected by review because it gives the reader no way to judge the asymmetry: it should be reformulated either as a single-curve analytical illustration or as a measured comparison once the alternative is exercisable. The previous "(anchored)" / "(modeled)" column-header convention is retired because it proved to be misleading in practice when neither column was anchored to a fresh measurement.
+
+The Discussion section's "Comparison with ..." subsection cites the trade-off figure by `\ref` at least once and reports the relationship either as a Pareto (one form wins on metric A, the other wins on metric B), as a crossover (one form wins until parameter X, the other wins thereafter), or as a single-quantity bound (the proposed mechanism pays a closed-form cost in exchange for a named guarantee). The framing is chosen to match the actual data; an honest single-quantity bound is preferred over a forced two-column comparison when only one column is exercisable.
+
+Generators backing the trade-off discussion are written for Python 3.5+ (no f-strings) so they run on the workspace's `/router/bin/python3` interpreter without requiring a virtualenv; this matches the convention of the other `img/seaborn/generate_*.py` generators in this workspace.
+
+# Code and data availability discipline
+
+Every IEEE Access submission authored from this workspace carries a `\section*{Code and Data Availability}` subsection at the bottom of the manuscript, immediately before the References. The subsection cites the public repository URL `https://github.com/tobliao/i2c_uvm` (rendered with `\url{...}`) and names the simulator and Python toolchain versions used to produce the regression results.
+
+The subsection contains a paper-to-repo artifact map at listing, figure, and table granularity: every numbered listing maps to one source file in `src/`; every numbered figure maps to one generator under `img/seaborn/`; every numbered table maps to one regression target in `sim/Makefile` (or to one generator script if the table is composed of analytical numbers). The map uses `\ref{}` against the manuscript's own labels so that a reader scanning the artifact map sees the same numbering as in the body text. Stale paths are caught by the verification step in the pre-commit checklist below.
+
+A companion `README.md` at the repository root mirrors the same artifact map, so a reader who lands on the repository (e.g. via the GitHub URL in the manuscript) can locate the regression target, the figure generator, and the source file for every numbered manuscript artifact without opening the PDF. The README also carries the BibTeX citation snippet for every published or submitted manuscript that this repository underwrites; placeholder entries are marked `note = {to appear}` or `note = {submitted}` until the venue confirms.
+
+When the manuscript names a regression target by string (e.g. `make regr_credit`), the string is verified against the actual `sim/Makefile` before commit; a string that does not resolve to an actual target is treated as a reproducibility defect rather than a typographic one.
+
+# Folder-naming convention for I2C papers
+
+The `paper/` directory contains one subdirectory per manuscript.
+Subdirectory slugs are lowercase, underscore-separated, no spaces, no leading articles except the reserved `a_` prefix used for methodology-focused papers whose title genuinely opens with an indefinite article.
+
+- Verification-focused papers use the pattern `<descriptor>_<mechanism>_verification`.
+  Examples: `credit_based_flow_control_verification`, `deterministic_dual_role_i2c_verification`, `clock_stretching_bounded_timeout_verification`.
+- Methodology-focused papers use the pattern `a_<noun_phrase>`.
+  Examples: `a_context_aware_feedback_loop`.
+
+Each folder contains a single top-level `.tex` file:
+- `access.tex` for IEEE Access submissions.
+- `main.tex` for MDPI journals (e.g., Electronics).
+
+Sibling image directories are `img/seaborn/` for plotted figures and `img/bio/` for author biographies.
+Image paths in the `.tex` file are relative to the folder (e.g., `img/seaborn/credit_architecture_diagram.png`) so that the folder is self-contained and can be moved without breaking references.
+Folders must not contain stray spaces, uppercase letters, or hyphens.
+Renames are done with plain `mv` because `paper/` is in `.gitignore`; `git mv` is not required.
+
+# Ten-item anti-plagiarism and reproducibility pre-commit checklist for I2C siblings
+
+Before committing any I\textsuperscript{2}C manuscript, the author runs this check.
+The intent is to catch overlaps with existing siblings, not to replace the Turnitin pipeline that `latex_writer.mdc` requires before submission.
+
+1. For each paragraph in the manuscript, grep the first sentence against all other `paper/*/access.tex` and `paper/*/main.tex` files.
+   Any paragraph whose first sentence produces a match in another sibling is rewritten at argument-level, not at synonym level.
+2. For any sentence shared between the manuscript and a sibling, verify that the manuscript does not share ten or more consecutive substantive words with the sibling.
+   Function words (articles, prepositions, pronouns, auxiliaries) are excluded from the count; code identifiers, citation keys, and equation labels are excluded.
+3. Verify that a `\paragraph{Paper scope.}` block exists at the end of the Introduction.
+   The block contains exactly two sentences: the first is composed of negatives and lists what the manuscript does not claim; the second points forward to a Limitations subsection.
+4. Verify that every bound symbol in the manuscript is consistent with the sibling registry in this rule file.
+   Any reused letter carries a disambiguation sentence.
+5. Run the forbidden-word sweep from `latex_writer.mdc` (forbidden words include `enables`, `crucial`, `novel`, `seamless`, `robust`, `leverage`, `significantly`, `state-of-the-art`, `cutting-edge`).
+   Each remaining occurrence is replaced with a concrete verb and accompanied by an operational definition in the same sentence.
+6. Count bibliography entries by year.
+   At most three entries may predate 2024.
+   At least 70% of entries must be dated 2024 or later.
+   For IEEE Access submissions: at least twenty entries total, with at least one-third at ladder level 1 or 2 from the IEEE-first preference ladder in this rule file (soft target: half).
+   Every entry must be cited at least once; uncited entries are removed.
+   Grep the manuscript for the words `Analytical` (in figure titles), `overhead` or `bound` (in y-axis labels) within the trade-off subsection. The trade-off discussion either takes the analytical-illustration form (single-curve, "Analytical" in the title) or the measured-comparison form (both columns regenerated from committed CSVs); a two-column comparison in which both columns are modeled returns to the evaluation stage per the Baseline-comparison discipline section above.
+7. Verify tied spaces on every I\textsuperscript{2}C-specific unit and cross-reference: `Figure~\ref`, `Section~\ref`, `Table~\ref`, `Eq.~\eqref`, `$100$~kHz`, `$10~\mu\mathrm{s}$`, `$t_{\mathrm{LOW}}$`, `$t_{\mathrm{BUF}}$`.
+   A broken tie is a Turnitin-adjacent correctness defect, not a typographic nicety.
+8. Regenerate every architecture diagram and raincloud plot from its `img/seaborn/*.py` source, confirm that both `.png` and `.pdf` are written via `plt.savefig(..., bbox_inches='tight')`, and open each PNG to visually inspect that no legend element overlaps a numbered annotation box, a data region, or another legend column.
+   A diagram whose legend geometry changed during a revision pass is re-inspected even if no caption text changed.
+9. Grep `\\begin\{figure\}\[!t\]` (single-column) on every manuscript `.tex` file.
+   Each hit is converted to `[!htbp]` or promoted to `figure*` depending on whether the content is single- or column-spanning.
+   Grep `\\begin\{figure\*\}\[!t\]` as a sanity check that column-spanning floats retain `[!t]` and that `stfloats` is loaded in the preamble.
+   Grep `\\item \\textbf\{` on every manuscript `.tex` file; expect zero hits. Each hit is mechanically rewritten to drop the `\textbf{...}` wrapper while preserving the label text and its trailing punctuation, per the no-bold-on-item-labels rule in the Terminology lock-in section above.
+   Count `\\begin\{lstlisting\}` and count `\\noindent\\begin\{minipage\}` that immediately precedes an `lstlisting`; the two counts are equal. An unwrapped lstlisting in a manuscript with five or more listings is rejected by review and is mechanically wrapped before the visual-inspection step.
+   Grep `\\raggedbottom` on every manuscript `.tex` file; for `ieeeaccess.cls` submissions the count is exactly two---one in the preamble, one immediately after `\maketitle`.
+10. Grep `github.com/tobliao/i2c_uvm` and `Code and Data Availability` on every manuscript `.tex` file; expect at least one hit each, per the Code and data availability discipline section above. Verify that the same URL appears in the repository-root `README.md`, that the README's paper artifact map names every numbered listing/figure/table that the manuscript's artifact map names, and that every regression target named in the manuscript prose (e.g. `make regr_credit`) resolves to an actual target in `sim/Makefile`. A missing GitHub URL, a stale regression target name, or a divergence between the manuscript's artifact map and the README's artifact map is a reproducibility defect that returns to commit-prep.
+
+# Future topics parking lot
+
+The following I\textsuperscript{2}C-related topics are reserved for future manuscripts.
+Each entry carries a canonical folder slug and a one-line scope disclaimer so that a future paper, possibly authored by a different agent session, starts from a consistent frame rather than drifting.
+
+- `clock_stretching_bounded_timeout_verification`: bound the duration of I\textsuperscript{2}C slave clock stretching as a verification contract, with a falsifiable timeout per stretch and regression-time classification of stretch events. Out of scope: multi-master arbitration, credit accounting.
+- `multi_master_arbitration_coherence`: verify arbitration winner selection and bus-ownership hand-off across multiple concurrent masters. Out of scope: slave-side FIFO overflow, dual-role switching of a single agent.
+- `i3c_dynamic_address_assignment_uvm`: UVM verification of I\textsuperscript{3}C dynamic address assignment (DAA) procedure including ENTDAA, SETDASA, and RSTDAA flows. Out of scope: legacy I\textsuperscript{2}C-only features, HDR-DDR modes beyond SDR.
+- `smbus_pec_integrity_verification`: SMBus Packet Error Code (PEC) integrity verification with CRC-8 generation and detection across block writes and reads. Out of scope: non-SMBus I\textsuperscript{2}C endpoints, ARA (Alert Response Address) flows.
+- `repeated_start_ownership_handover`: verify that repeated-start does not break bus ownership invariants when combined with role switching. Out of scope: credit accounting, SMBus-specific framing.
+- `open_drain_contention_formal`: formal proof that `scl_drive`/`sda_drive` contributions from multiple agents resolve correctly under open-drain wired-AND semantics. Out of scope: dynamic address assignment, credit accounting.
+- `i2c_security_ara_alert_verification`: UVM verification of the SMBus Alert Response Address (ARA) flow and host-alert prioritization. Out of scope: encrypted payloads, TLS-style protocol layers.
+- `i2c_target_only_endpoint_conformance`: conformance verification for target-only I\textsuperscript{2}C endpoints that never operate as master, including spurious-master-address response behavior. Out of scope: dual-role switching, credit accounting.
+
+New entries are appended below this paragraph rather than inserted mid-list, so that the parking lot preserves chronological ordering.
+
+# How to use this rule
+
+A new I\textsuperscript{2}C paper begins by:
+
+1. Choosing a slug from the parking lot above, or proposing a new slug that matches the folder-naming convention. Create the folder under `paper/` with the chosen slug.
+2. Copying the closest-topic sibling's `access.tex` or `main.tex` as a skeletal starting point, then immediately executing step 1 of the anti-plagiarism checklist against that sibling to prevent inheritance of sentences.
+3. Consulting the symbol registry before any display equation; claiming new rows in this rule file when introducing new symbols.
+4. Writing the manuscript with protocol-specific hedges; rejecting any unbounded adjective.
+5. Running the full ten-item anti-plagiarism and reproducibility pre-commit checklist before the first author review.
+6. Updating this rule file with the new paper's contributed symbols, config knobs, and any newly curated references.

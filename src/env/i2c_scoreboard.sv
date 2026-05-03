@@ -1,109 +1,87 @@
 `ifndef I2C_SCOREBOARD_SV
 `define I2C_SCOREBOARD_SV
 
-//==============================================================================
-// I2C Scoreboard
-//
-// Professional scoreboard with:
-// - TLM Analysis FIFO for decoupled processing
-// - Expected vs Actual comparison
-// - uvm_event integration for synchronization
-// - uvm_callback hooks for extensibility
-// - Statistical tracking and reporting
-//==============================================================================
-
 class i2c_scoreboard extends uvm_scoreboard;
   `uvm_component_utils(i2c_scoreboard)
   
-  // Register callback type
   `uvm_register_cb(i2c_scoreboard, i2c_scoreboard_callback)
   
-  //----------------------------------------------------------------------------
-  // TLM Ports
-  //----------------------------------------------------------------------------
   uvm_tlm_analysis_fifo #(i2c_transaction) analysis_fifo;
   uvm_analysis_imp #(i2c_transaction, i2c_scoreboard) item_imp;
   
-  //----------------------------------------------------------------------------
-  // Expected Transaction Queue
-  //----------------------------------------------------------------------------
   i2c_transaction expected_queue[$];
+  i2c_config cfg;
   
-  //----------------------------------------------------------------------------
-  // Statistics
-  //----------------------------------------------------------------------------
   int unsigned total_received  = 0;
   int unsigned total_compared  = 0;
   int unsigned total_matched   = 0;
   int unsigned total_mismatched = 0;
   
-  //----------------------------------------------------------------------------
-  // Configuration
-  //----------------------------------------------------------------------------
   bit enable_comparison = 1;
   
-  //----------------------------------------------------------------------------
-  // Events for Synchronization
-  //----------------------------------------------------------------------------
+  // ---- Credit-mode accounting ----
+  int unsigned credit_data_transactions;
+  int unsigned credit_init_frames;
+  int unsigned credit_return_frames;
+  int credit_balance_delta;
+  
   uvm_event transaction_received_event;
   uvm_event comparison_done_event;
   uvm_event mismatch_event;
   
-  //----------------------------------------------------------------------------
-  // Constructor
-  //----------------------------------------------------------------------------
   function new(string name, uvm_component parent);
     super.new(name, parent);
     item_imp = new("item_imp", this);
+    credit_data_transactions = 0;
+    credit_init_frames = 0;
+    credit_return_frames = 0;
   endfunction
   
-  //----------------------------------------------------------------------------
-  // Build Phase
-  //----------------------------------------------------------------------------
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
     
-    // Create TLM FIFO
     analysis_fifo = new("analysis_fifo", this);
     
-    // Create events
     transaction_received_event = new("transaction_received_event");
     comparison_done_event = new("comparison_done_event");
     mismatch_event = new("mismatch_event");
+
+    if (!uvm_config_db#(i2c_config)::get(this, "", "cfg", cfg)) begin
+      cfg = i2c_config::type_id::create("cfg");
+    end
     
     `uvm_info("SCB", "Scoreboard built with TLM FIFO and event synchronization", UVM_MEDIUM)
   endfunction
   
-  //----------------------------------------------------------------------------
-  // Write Function - Called by Monitor via Analysis Port
-  //----------------------------------------------------------------------------
   function void write(i2c_transaction tr);
     i2c_transaction tr_copy;
     
     total_received++;
     
-    // Clone transaction for FIFO
     tr_copy = i2c_transaction::type_id::create("tr_copy");
     tr_copy.copy(tr);
     
-    // Push to FIFO for async processing
     analysis_fifo.write(tr_copy);
-    
-    // Trigger event
     transaction_received_event.trigger(tr_copy);
+
+    // Credit-mode frame accounting
+    if (cfg.credit_mode_enable) begin
+      case (tr.frame_type)
+        I2C_CREDIT_FRAME_DATA:   credit_data_transactions++;
+        I2C_CREDIT_FRAME_INIT:   credit_init_frames++;
+        I2C_CREDIT_FRAME_RETURN: credit_return_frames++;
+        default: ;
+      endcase
+    end
     
     `uvm_info("SCB", $sformatf("Received transaction #%0d: %s", 
               total_received, tr.convert2string()), UVM_HIGH)
   endfunction
   
-  //----------------------------------------------------------------------------
-  // Run Phase - Comparison Loop
-  //----------------------------------------------------------------------------
   task run_phase(uvm_phase phase);
     i2c_transaction actual_tr;
     
     forever begin
-      // Get transaction from FIFO (blocking)
       analysis_fifo.get(actual_tr);
       
       if (enable_comparison && expected_queue.size() > 0) begin
@@ -114,32 +92,25 @@ class i2c_scoreboard extends uvm_scoreboard;
     end
   endtask
   
-  //----------------------------------------------------------------------------
-  // Compare with Expected Transaction
-  //----------------------------------------------------------------------------
   function void compare_with_expected(i2c_transaction actual);
     i2c_transaction expected;
     bit matched = 1;
     
-    // Get expected from queue
     expected = expected_queue.pop_front();
     total_compared++;
     
-    // Compare address
     if (expected.addr !== actual.addr) begin
       matched = 0;
       `uvm_error("SCB", $sformatf("Address mismatch: exp=0x%02h, act=0x%02h",
                                   expected.addr, actual.addr))
     end
     
-    // Compare direction (R/W)
     if (expected.direction !== actual.direction) begin
       matched = 0;
       `uvm_error("SCB", $sformatf("Direction mismatch: exp=%s, act=%s",
                                   expected.direction.name(), actual.direction.name()))
     end
     
-    // Compare data
     if (expected.data.size() != actual.data.size()) begin
       matched = 0;
       `uvm_error("SCB", $sformatf("Data size mismatch: exp=%0d, act=%0d",
@@ -154,7 +125,6 @@ class i2c_scoreboard extends uvm_scoreboard;
       end
     end
     
-    // Update statistics
     if (matched) begin
       total_matched++;
       `uvm_info("SCB", $sformatf("Transaction #%0d MATCHED", total_compared), UVM_MEDIUM)
@@ -163,13 +133,9 @@ class i2c_scoreboard extends uvm_scoreboard;
       mismatch_event.trigger(actual);
     end
     
-    // Trigger completion event
     comparison_done_event.trigger();
   endfunction
   
-  //----------------------------------------------------------------------------
-  // Add Expected Transaction (called from test/sequence)
-  //----------------------------------------------------------------------------
   function void add_expected(i2c_transaction tr);
     i2c_transaction tr_copy;
     tr_copy = i2c_transaction::type_id::create("expected_tr");
@@ -179,19 +145,20 @@ class i2c_scoreboard extends uvm_scoreboard;
               tr.convert2string(), expected_queue.size()), UVM_HIGH)
   endfunction
   
-  //----------------------------------------------------------------------------
-  // Check Phase
-  //----------------------------------------------------------------------------
   function void check_phase(uvm_phase phase);
     super.check_phase(phase);
     
     if (expected_queue.size() > 0)
       `uvm_error("SCB", $sformatf("%0d expected transactions unmatched", expected_queue.size()))
+
+    if (cfg.credit_mode_enable) begin
+      credit_balance_delta = credit_init_frames + credit_return_frames - credit_data_transactions;
+      `uvm_info("SCB", $sformatf(
+        "Credit balance: init=%0d data=%0d returns=%0d delta=%0d",
+        credit_init_frames, credit_data_transactions, credit_return_frames, credit_balance_delta), UVM_LOW)
+    end
   endfunction
   
-  //----------------------------------------------------------------------------
-  // Report Phase - Statistics
-  //----------------------------------------------------------------------------
   function void report_phase(uvm_phase phase);
     real match_rate;
     super.report_phase(phase);
@@ -206,12 +173,16 @@ class i2c_scoreboard extends uvm_scoreboard;
     `uvm_info("SCB", $sformatf("║ Matched:     %8d             ║", total_matched), UVM_NONE)
     `uvm_info("SCB", $sformatf("║ Mismatched:  %8d             ║", total_mismatched), UVM_NONE)
     `uvm_info("SCB", $sformatf("║ Match Rate:  %7.1f%%            ║", match_rate), UVM_NONE)
+    if (cfg.credit_mode_enable) begin
+      `uvm_info("SCB", "╠════════════════════════════════════╣", UVM_NONE)
+      `uvm_info("SCB", $sformatf("║ Credit Data: %8d             ║", credit_data_transactions), UVM_NONE)
+      `uvm_info("SCB", $sformatf("║ Credit Init: %8d             ║", credit_init_frames), UVM_NONE)
+      `uvm_info("SCB", $sformatf("║ Credit Ret:  %8d             ║", credit_return_frames), UVM_NONE)
+      `uvm_info("SCB", $sformatf("║ Balance:     %8d             ║", credit_balance_delta), UVM_NONE)
+    end
     `uvm_info("SCB", "╚════════════════════════════════════╝", UVM_NONE)
   endfunction
   
-  //----------------------------------------------------------------------------
-  // Utility: Wait for N comparisons
-  //----------------------------------------------------------------------------
   task wait_for_comparisons(int count = 1);
     repeat(count) begin
       comparison_done_event.wait_trigger();

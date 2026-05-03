@@ -4,7 +4,7 @@ WORK_DIR = $(shell pwd)
 PROJ_ROOT = ..
 
 # Source Files
-RTL = $(PROJ_ROOT)/rtl/i2c_slave.sv $(PROJ_ROOT)/rtl/i2c_master.sv
+RTL = $(PROJ_ROOT)/rtl/i2c_slave.sv $(PROJ_ROOT)/rtl/i2c_master.sv $(PROJ_ROOT)/rtl/i2c_credit_slave.sv
 PKG = $(PROJ_ROOT)/src/i2c_pkg.sv $(PROJ_ROOT)/src/i2c_test_pkg.sv
 INTF = $(PROJ_ROOT)/src/i2c_if.sv
 TOP = $(PROJ_ROOT)/sim/tb_top.sv
@@ -118,6 +118,56 @@ regr_paper: comp
 		print "==================================================================================================="; \
 	}' regression_raw.csv
 	@echo "Detailed metrics logged to: regression_raw.csv"
+
+# Credit-Based Test Targets (pass +CREDIT_MODE to select credit slave DUT)
+run_credit_sanity: comp
+	$(SIM) +UVM_TESTNAME=i2c_credit_sanity_test +CREDIT_MODE -l run_credit_sanity.log
+
+run_credit_exhaustion: comp
+	$(SIM) +UVM_TESTNAME=i2c_credit_exhaustion_test +CREDIT_MODE -l run_credit_exhaustion.log
+
+run_credit_burst: comp
+	$(SIM) +UVM_TESTNAME=i2c_credit_burst_test +CREDIT_MODE -l run_credit_burst.log
+
+run_credit_error: comp
+	$(SIM) +UVM_TESTNAME=i2c_credit_error_test +CREDIT_MODE -l run_credit_error.log
+
+run_credit_dual_role: comp
+	$(SIM) +UVM_TESTNAME=i2c_credit_dual_role_test +CREDIT_MODE -l run_credit_dual_role.log
+
+run_credit_random: comp
+	$(SIM) +UVM_TESTNAME=i2c_credit_random_test +CREDIT_MODE -l run_credit_random.log
+
+# Credit Regression
+CREDIT_TEST_LIST = i2c_credit_sanity_test i2c_credit_exhaustion_test i2c_credit_burst_test \
+                   i2c_credit_error_test i2c_credit_dual_role_test i2c_credit_random_test
+
+regr_credit: comp
+	@echo "======================================================================"
+	@echo "           CREDIT-BASED I2C REGRESSION SUITE EXECUTION               "
+	@echo "======================================================================"
+	@for test in $(CREDIT_TEST_LIST); do \
+		echo "Running $$test..."; \
+		$(SIM) +UVM_TESTNAME=$$test +CREDIT_MODE -l run_$${test}.log -cm_name $$test; \
+	done
+	@echo "Credit Regression Complete."
+
+# Full Regression (Original + Credit)
+FULL_TEST_LIST = $(TEST_LIST) $(CREDIT_TEST_LIST)
+
+regr_full: comp
+	@echo "======================================================================"
+	@echo "          FULL REGRESSION (ORIGINAL + CREDIT) SUITE                  "
+	@echo "======================================================================"
+	@for test in $(TEST_LIST); do \
+		echo "Running $$test..."; \
+		$(SIM) +UVM_TESTNAME=$$test -l run_$${test}.log -cm_name $$test; \
+	done
+	@for test in $(CREDIT_TEST_LIST); do \
+		echo "Running $$test (credit mode)..."; \
+		$(SIM) +UVM_TESTNAME=$$test +CREDIT_MODE -l run_$${test}.log -cm_name $$test; \
+	done
+	@echo "Full Regression Complete."
 
 # Generate Coverage Report (URG)
 cov_rpt:
