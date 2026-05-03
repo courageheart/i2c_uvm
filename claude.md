@@ -6,38 +6,57 @@ A comprehensive UVM Verification IP (VIP) for I2C protocol with behavioral RTL m
 ## Directory Structure
 ```
 i2c_uvm/
-├── docs/TESTPLAN.md          # Verification test plan
+├── docs/TESTPLAN.md          # Verification test plan (incl. credit suite)
 ├── rtl/
 │   ├── i2c_master.sv         # Behavioral RTL Master
-│   └── i2c_slave.sv          # Behavioral RTL Slave (SLAVE_ADDR=0x55)
+│   ├── i2c_slave.sv          # Behavioral RTL Slave (SLAVE_ADDR=0x55)
+│   └── i2c_credit_slave.sv   # FIFO + credit-return path (credit extension)
 ├── sim/
-│   ├── Makefile              # Build and regression targets
+│   ├── Makefile              # Build and regression targets (incl. regr_credit)
 │   ├── tb_top.sv             # Top-level testbench
 │   └── coverage.vdb/         # Coverage database (generated)
+├── img/seaborn/              # Figure-generation scripts (matplotlib + seaborn)
+├── paper/                    # Manuscript sources (LaTeX, gitignored)
 └── src/
     ├── i2c_pkg.sv            # Main UVM package
     ├── i2c_test_pkg.sv       # Test package
     ├── i2c_if.sv             # SystemVerilog interface
-    ├── common/i2c_types.sv   # Enums and types
+    ├── common/
+    │   ├── i2c_types.sv          # Base enums and types
+    │   ├── i2c_events.sv         # uvm_event_pool wrapper
+    │   └── i2c_credit_types.sv   # Credit frame-type / FSM enums + defaults
     ├── agent/
-    │   ├── i2c_config.sv     # Agent configuration (slave_addr field)
+    │   ├── i2c_config.sv     # Agent config (slave_addr + credit knobs)
     │   ├── i2c_transaction.sv
     │   ├── i2c_driver.sv     # Supports Master & Slave modes
     │   ├── i2c_monitor.sv
-    │   └── i2c_sequencer.sv
+    │   ├── i2c_sequencer.sv
+    │   ├── i2c_credit_master_driver.sv  # CBT (credit-gated dispatch)
+    │   ├── i2c_credit_slave_driver.sv   # CBR (pipeline-delayed return)
+    │   └── i2c_credit_monitor.sv        # Shadow-counter TBI enforcement
     ├── env/
     │   ├── i2c_env.sv
     │   ├── i2c_scoreboard.sv
-    │   └── i2c_coverage.sv
+    │   └── i2c_coverage.sv   # Hosts base + credit covergroups
     ├── seq/
-    │   ├── i2c_base_sequence.sv    # Base + Write/Read sequences
-    │   └── i2c_mixed_sequence.sv   # Random mixed traffic
+    │   ├── i2c_base_sequence.sv         # Base + Write/Read sequences
+    │   ├── i2c_mixed_sequence.sv        # Random mixed traffic
+    │   ├── i2c_credit_base_sequence.sv
+    │   ├── i2c_credit_burst_sequence.sv
+    │   └── i2c_credit_error_sequence.sv
     └── tests/
-        ├── i2c_test_base.sv        # Base test class
-        ├── i2c_sanity_test.sv      # Dual-mode test (Master then Slave)
+        ├── i2c_test_base.sv             # Base test class
+        ├── i2c_sanity_test.sv           # Dual-mode test (Master then Slave)
         ├── i2c_slave_test.sv
-        ├── i2c_slave_read_test.sv  # Exercises dut_slave Read path
-        ├── i2c_master_fsm_test.sv  # Exercises dut_master FSM
+        ├── i2c_slave_read_test.sv       # Exercises dut_slave Read path
+        ├── i2c_master_fsm_test.sv       # Exercises dut_master FSM
+        ├── i2c_credit_test_base.sv
+        ├── i2c_credit_sanity_test.sv
+        ├── i2c_credit_exhaustion_test.sv
+        ├── i2c_credit_burst_test.sv
+        ├── i2c_credit_error_test.sv
+        ├── i2c_credit_dual_role_test.sv
+        ├── i2c_credit_random_test.sv
         └── ... (other tests)
 ```
 
@@ -571,19 +590,72 @@ endclass
 | Factory | `uvm_factory` | Object creation | Throughout |
 | Config DB | `uvm_config_db` | Configuration passing | Throughout |
 
-## Recent Updates (Feb 2026)
+## Credit-Based Flow Control Extension
 
-### Paper Regression Suite
-- **Target:** `make regr_paper`
-- **Runs:** 165 total (15 iterations of 11 distinct test cases)
-- **Reporting:** Generates professional IEEE-style summary table
-- **Metrics:** Tracks Pass/Fail status and CPU time per test
-- **Artifacts:** `regression_raw.csv`, `regr_paper.log`
+This extension layers a credit-based flow control protocol on top of standard I2C framing so that receiver buffer capacity is tracked as an enforceable contract rather than left to ad-hoc assertions or post-silicon debug. The full design and evaluation are documented in `paper/credit_based_flow_control_verification/access.tex`; the bullets below are the in-tree summary that a session-context reader needs.
 
-### Manuscript Updates
-- **File:** `paper/access.tex`
-- **Content:** Updated quantitative results section to reflect 165 runs across 3 evaluation categories.
-- **Figures:** Added `img/regression_summary.png` showing the automated regression report.
+### Six Transmit-Budget Invariants (TBIs)
 
-### Git Configuration
-- **.gitignore:** Updated to exclude paper artifacts (`paper/`, `img/`) and temporary regression files (`.start_time`, `.end_time`, `regression_raw.csv`).
+The credit monitor (`src/agent/i2c_credit_monitor.sv`) enforces all six per transaction from a shadow counter reconstructed from the bus, independently of both drivers:
+
+- **TBI-1**: shadow credit balance is non-negative (no transmit without credit).
+- **TBI-2**: balance bounded above by `cfg.cbr_depth` (no phantom credits).
+- **TBI-3**: initialization completes before the first data frame.
+- **TBI-4**: end-of-test balance equals the initial budget (no leaks, no surplus).
+- **TBI-5**: credit-return latency bounded by `cfg.credit_stall_timeout_ns`.
+- **TBI-6**: out-of-band or duplicate returns rejected as protocol errors.
+
+A violation is logged with the offending transaction, the shadow-counter value at the failing sample, and the named TBI, so test logs are sufficient for triage.
+
+### Components
+
+- **CBT (credit-based transmitter)** — `src/agent/i2c_credit_master_driver.sv`: gates dispatch on the shadow counter; bounded stall on counter == 0 with `CREDIT_EXHAUSTED` analysis event.
+- **CBR (credit-based receiver)** — `src/agent/i2c_credit_slave_driver.sv`: initializes the counter to `cfg.cbr_depth`, returns credits with a configurable pipeline delay.
+- **Credit Monitor** — `src/agent/i2c_credit_monitor.sv`: per-transaction TBI evaluation.
+- **Credit-aware RTL slave** — `rtl/i2c_credit_slave.sv`: 8-entry FIFO with configurable pipeline delay for closed-loop simulation.
+- **Frame-type encoding** — `src/common/i2c_credit_types.sv`: bits `[7:6]` of the first data byte encode DATA / INIT / RETURN / STATUS.
+
+### Configuration knobs (in `i2c_config`)
+
+| Knob | Default | Purpose |
+|------|---------|---------|
+| `cfg.credit_mode_enable`        | 0 | Selects credit-aware drivers and monitor |
+| `cfg.cbr_depth`                 | 8 | Receiver FIFO capacity (also TBI-2 upper bound) |
+| `cfg.cbr_pipe_delay`            | 2 | Return-path pipeline depth in cycles |
+| `cfg.credit_stall_timeout_ns`   | 1_000_000 | Bounded stall before deadlock-class failure |
+| `cfg.inject_send_without_credit`| 0 | Fault-injection knob for TBI-1 monitor sensitivity |
+
+### Test scenarios and regression
+
+Six scenarios under `src/tests/i2c_credit_*.sv`: `sanity`, `exhaustion`, `burst`, `error`, `dual_role`, `random`. Run individually with `make run_credit_<scenario>` or as the full 6 x 15 = 90-run regression with `make regr_credit`. `+CREDIT_MODE` is set automatically by every credit target.
+
+### Bus-time framing-overhead bound
+
+The credit-framing tax is bounded by the closed-form expression `(L_INIT + B * L_RET) * t_BIT` and falls from ~71% of bus time at burst length B = 1 toward an asymptote of ~50% at large B for the tested `cbr_depth = 8` configuration. Plotted analytically (no measurement substitution) by `img/seaborn/generate_credit_overhead.py`.
+
+## Recent Updates (Apr-May 2026)
+
+### Credit-Based Flow Control Extension Landed
+- **RTL:** `rtl/i2c_credit_slave.sv` (FIFO + credit-return path).
+- **Agent:** `src/agent/i2c_credit_master_driver.sv`, `i2c_credit_slave_driver.sv`, `i2c_credit_monitor.sv`.
+- **Common:** `src/common/i2c_credit_types.sv` (frame-type and FSM enums, defaults).
+- **Sequences:** `src/seq/i2c_credit_{base,burst,error}_sequence.sv`.
+- **Tests:** `src/tests/i2c_credit_{test_base,sanity,exhaustion,burst,error,dual_role,random}_test.sv`.
+- **Coverage:** `credit_protocol_cg` and `credit_transition_cg` in `src/env/i2c_coverage.sv`.
+
+### Manuscript and Reproduction
+- **File:** `paper/credit_based_flow_control_verification/access.tex` — IEEE Access submission, with a `Code and Data Availability` subsection mapping every numbered listing/figure/table to a path in this repo.
+- **Regression target:** `make regr_credit` (6 scenarios x 15 seeds = 90 runs); `make regr_full` runs both the dual-role and credit suites.
+- **Figure generators:** `img/seaborn/generate_credit_arch.py` (architecture), `generate_credit_plots.py` (regression plots), `generate_credit_overhead.py` (analytical bus-time overhead).
+- **Public repo:** <https://github.com/tobliao/i2c_uvm>.
+
+### Documentation Refresh
+- **README.md:** project overview now covers both manuscripts (dual-role, credit), with a paper artifact map mirroring the manuscript's Code and Data Availability subsection.
+- **docs/TESTPLAN.md:** added §3.5 (credit tests TP_501..TP_506), §4.3/§4.4 (credit covergroups), §6 (TBI reference table), §7 (reproduction); updated §1.1 scope and §1.2 future work.
+- **.cursor/rules/i2c_paper.mdc:** softened baseline-comparison discipline (analytical vs. measured forms now distinguished), added Code and Data Availability discipline, extended pre-commit checklist to ten items.
+
+### Previous: Feb 2026
+- **Paper regression suite** introduced under `make regr_paper` (165 total runs = 11 tests x 15 iterations) for the dual-role manuscript; CSV at `sim/regression_raw.csv`, log at `sim/regr_paper.log`.
+- **Manuscript update**: `paper/deterministic_dual_role_i2c_verification/access.tex` quantitative results section reflected the 165-run sweep.
+- **Figures**: `img/regression_summary.png` added.
+- **.gitignore:** updated to exclude paper artifacts (`paper/`, `img/`) and temporary regression files (`.start_time`, `.end_time`, `regression_raw.csv`).

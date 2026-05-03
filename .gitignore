@@ -71,6 +71,7 @@ sim/regression_raw.csv
 # Editor/IDE Files
 # =============================================================================
 .vscode/
+.cursor/
 .idea/
 *.bak
 
