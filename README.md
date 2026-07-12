@@ -90,6 +90,7 @@ The overhead curve is analytical (closed-form, not measured); the other plots ar
 | Listings 4, 5 (CBR init/return)| `src/agent/i2c_credit_slave_driver.sv`                                 |
 | Listing 7 (anti-pattern)       | Illustrative only; not in the repository                               |
 | Table II (regression results)  | `rtl/i2c_credit_slave.sv` exercised via `make regr_credit`             |
+| Analytical credit/non-credit comparison | Architectural comparison derived from `cfg.credit_mode_enable` behavior |
 | Six test scenarios             | `src/tests/i2c_credit_{sanity,exhaustion,burst,error,dual_role,random}_test.sv` |
 | Credit covergroups (Table III) | `src/env/i2c_coverage.sv`                                              |
 | Stimulus library               | `src/seq/i2c_credit_{base,burst,error}_sequence.sv`                    |
